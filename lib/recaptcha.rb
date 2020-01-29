@@ -8,6 +8,7 @@ require 'recaptcha/configuration'
 require 'recaptcha/helpers'
 require 'recaptcha/adapters/controller_methods'
 require 'recaptcha/adapters/view_methods'
+require 'recaptcha/instrumentation'
 if defined?(Rails)
   require 'recaptcha/railtie'
 end
@@ -99,6 +100,11 @@ module Recaptcha
     verify_hash['remoteip'] = options[:remote_ip] if options.key?(:remote_ip)
 
     reply = api_verification_free(verify_hash, timeout: options[:timeout], json: options[:json])
+
+    Instrumentation.report(
+      { token: response, options: options, response: reply }
+    )
+
     success = reply['success'].to_s == 'true' &&
       hostname_valid?(reply['hostname'], options[:hostname]) &&
       action_valid?(reply['action'], options[:action]) &&
