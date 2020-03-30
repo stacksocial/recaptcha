@@ -65,16 +65,20 @@ module Recaptcha
     verify_hash = { 'secret' => secret_key, 'response' => response }
     verify_hash['remoteip'] = options[:remote_ip] if options.key?(:remote_ip)
 
-    reply = api_verification(verify_hash, timeout: options[:timeout])
-
+    reply = api_verification_free(verify_hash, timeout: options[:timeout], json: options[:json])
     Instrumentation.report(
       { token: response, options: options, response: reply }
     )
-
-    reply['success'].to_s == 'true' &&
+    success = reply['success'].to_s == 'true' &&
       hostname_valid?(reply['hostname'], options[:hostname]) &&
       action_valid?(reply['action'], options[:action]) &&
       score_above_threshold?(reply['score'], options[:minimum_score])
+
+    if options[:with_reply] == true
+      return success, reply
+    else
+      return success
+    end
   end
 
   def self.hostname_valid?(hostname, validation)
