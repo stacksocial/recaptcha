@@ -71,10 +71,16 @@ module Recaptcha
       { token: response, options: options, response: reply }
     )
 
-    reply['success'].to_s == 'true' &&
+    success = reply['success'].to_s == 'true' &&
       hostname_valid?(reply['hostname'], options[:hostname]) &&
       action_valid?(reply['action'], options[:action]) &&
       score_above_threshold?(reply['score'], options[:minimum_score])
+
+    if options[:with_reply] == true
+      return success, reply
+    else
+      return success
+    end
   end
 
   def self.hostname_valid?(hostname, validation)
