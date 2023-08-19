@@ -156,11 +156,18 @@ module Recaptcha
     instance
   end
 
-  def self.api_verification_free(verify_hash, timeout: nil)
-    query = URI.encode_www_form(verify_hash)
-    uri = URI.parse("#{configuration.verify_url}?#{query}")
+  def self.api_verification_free(verify_hash, timeout: nil, json: false)
+    if json
+      uri = URI.parse(configuration.verify_url)
+      request = Net::HTTP::Post.new(uri.request_uri)
+      request['Content-Type'] = 'application/json; charset=utf-8'
+      request.body = JSON.generate(verify_hash)
+    else
+      query = URI.encode_www_form(verify_hash)
+      uri = URI.parse("#{configuration.verify_url}?#{query}")
+      request = Net::HTTP::Get.new(uri.request_uri)
+    end
     http_instance = http_client_for(uri: uri, timeout: timeout)
-    request = Net::HTTP::Get.new(uri.request_uri)
     JSON.parse(http_instance.request(request).body)
   end
 
