@@ -24,7 +24,9 @@ module Recaptcha
               options = options.merge(remote_ip: remoteip.to_s) if remoteip
             end
 
-            Recaptcha.verify_via_api_call(recaptcha_response, options)
+            success, @_recaptcha_reply =
+              Recaptcha.verify_via_api_call(recaptcha_response, options.merge(with_reply: true))
+            success
           end
 
           if verified
@@ -58,6 +60,10 @@ module Recaptcha
         verify_recaptcha(options) || raise(VerifyError)
       end
 
+      def recaptcha_reply
+        @_recaptcha_reply if defined?(@_recaptcha_reply)
+      end
+
       def recaptcha_error(model, attribute, message)
         if model
           model.errors.add(attribute, message)
@@ -70,16 +76,19 @@ module Recaptcha
         request.respond_to?(:format) && request.format == :html && respond_to?(:flash)
       end
 
-      # Extracts response token from params. params['g-recaptcha-response'] should either be a
-      # string or a hash with the action name(s) as keys. If it is a hash, then `action` is used as
-      # the key.
+      # Extracts response token from params. params['g-recaptcha-response-data'] for recaptcha_v3 or
+      # params['g-recaptcha-response'] for recaptcha_tags and invisible_recaptcha_tags and should
+      # either be a string or a hash with the action name(s) as keys. If it is a hash, then `action`
+      # is used as the key.
       # @return [String] A response token if one was passed in the params; otherwise, `''`
       def recaptcha_response_token(action = nil)
-        response_param = params['g-recaptcha-response']
-        if response_param&.respond_to?(:to_h) # Includes ActionController::Parameters
-          response_param[action].to_s
+        response_param = params['g-recaptcha-response-data'] || params['g-recaptcha-response']
+        response_param = response_param[action] if action && response_param.respond_to?(:key?)
+
+        if response_param.is_a?(String)
+          response_param
         else
-          response_param.to_s
+          ''
         end
       end
     end

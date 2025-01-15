@@ -10,12 +10,13 @@ module Recaptcha
     def self.recaptcha_v3(options = {})
       site_key = options[:site_key] ||= Recaptcha.configuration.site_key!
       action = options.delete(:action) || raise(Recaptcha::RecaptchaError, 'action is required')
-      id = options.delete(:id) || "g-recaptcha-response-" + dasherize_action(action)
-      name = options.delete(:name) || "g-recaptcha-response[#{action}]"
-      turbolinks = options.delete(:turbolinks)
+      id = options.delete(:id) || "g-recaptcha-response-data-#{dasherize_action(action)}"
+      name = options.delete(:name) || "g-recaptcha-response-data[#{action}]"
+      turbo = options.delete(:turbo) || options.delete(:turbolinks)
       options[:render] = site_key
       options[:script_async] ||= false
       options[:script_defer] ||= false
+      options[:ignore_no_element] = options.key?(:ignore_no_element) ? options[:ignore_no_element] : true
       element = options.delete(:element)
       element = element == false ? false : :input
       if element == :input
@@ -23,11 +24,11 @@ module Recaptcha
       end
       options[:class] = "g-recaptcha-response #{options[:class]}"
 
-      if turbolinks
+      if turbo
         options[:onload] = recaptcha_v3_execute_function_name(action)
       end
       html, tag_attributes = components(options)
-      if turbolinks
+      if turbo
         html << recaptcha_v3_onload_script(site_key, action, callback, id, options)
       elsif recaptcha_v3_inline_script?(options)
         html << recaptcha_v3_inline_script(site_key, action, callback, id, options)
@@ -73,7 +74,7 @@ module Recaptcha
               <div style="width: 300px; height: 60px; border-style: none;
                 bottom: 12px; left: 25px; margin: 0px; padding: 0px; right: 25px;
                 background: #f9f9f9; border: 1px solid #c1c1c1; border-radius: 3px;">
-                <textarea id="g-recaptcha-response" name="g-recaptcha-response"
+                <textarea name="g-recaptcha-response"
                   class="g-recaptcha-response"
                   style="width: 250px; height: 40px; border: 1px solid #c1c1c1;
                   margin: 10px 25px; padding: 0px; resize: none;">
@@ -138,6 +139,7 @@ module Recaptcha
       nonce = options.delete(:nonce)
       skip_script = (options.delete(:script) == false) || (options.delete(:external_script) == false)
       ui = options.delete(:ui)
+      options.delete(:ignore_no_element)
 
       data_attribute_keys = [:badge, :theme, :type, :callback, :expired_callback, :error_callback, :size]
       data_attribute_keys << :tabindex unless ui == :button
@@ -174,7 +176,8 @@ module Recaptcha
 
     # v3
 
-    # Renders a script that calls `grecaptcha.execute` for the given `site_key` and `action` and
+    # Renders a script that calls `grecaptcha.execute` or
+    # `grecaptcha.enterprise.execute` for the given `site_key` and `action` and
     # calls the `callback` with the resulting response token.
     private_class_method def self.recaptcha_v3_inline_script(site_key, action, callback, id, options = {})
       nonce = options[:nonce]
@@ -185,8 +188,8 @@ module Recaptcha
           // Define function so that we can call it again later if we need to reset it
           // This executes reCAPTCHA and then calls our callback.
           function #{recaptcha_v3_execute_function_name(action)}() {
-            grecaptcha.ready(function() {
-              grecaptcha.execute('#{site_key}', {action: '#{action}'}).then(function(token) {
+            #{recaptcha_ready_method_name}(function() {
+              #{recaptcha_execute_method_name}('#{site_key}', {action: '#{action}'}).then(function(token) {
                 #{callback}('#{id}', token)
               });
             });
@@ -199,13 +202,13 @@ module Recaptcha
           // Returns a Promise that resolves with the response token.
           async function #{recaptcha_v3_async_execute_function_name(action)}() {
             return new Promise((resolve, reject) => {
-              grecaptcha.ready(async function() {
-                resolve(await grecaptcha.execute('#{site_key}', {action: '#{action}'}))
+             #{recaptcha_ready_method_name}(async function() {
+                resolve(await #{recaptcha_execute_method_name}('#{site_key}', {action: '#{action}'}))
               });
             })
           };
 
-          #{recaptcha_v3_define_default_callback(callback) if recaptcha_v3_define_default_callback?(callback, action, options)}
+          #{recaptcha_v3_define_default_callback(callback, options) if recaptcha_v3_define_default_callback?(callback, action, options)}
         </script>
       HTML
     end
@@ -217,13 +220,13 @@ module Recaptcha
       <<-HTML
         <script#{nonce_attr}>
           function #{recaptcha_v3_execute_function_name(action)}() {
-            grecaptcha.ready(function() {
-              grecaptcha.execute('#{site_key}', {action: '#{action}'}).then(function(token) {
+            #{recaptcha_ready_method_name}(function() {
+              #{recaptcha_execute_method_name}('#{site_key}', {action: '#{action}'}).then(function(token) {
                 #{callback}('#{id}', token)
               });
             });
           };
-          #{recaptcha_v3_define_default_callback(callback) if recaptcha_v3_define_default_callback?(callback, action, options)}
+          #{recaptcha_v3_define_default_callback(callback, options) if recaptcha_v3_define_default_callback?(callback, action, options)}
         </script>
       HTML
     end
@@ -234,12 +237,12 @@ module Recaptcha
       options[:inline_script] != false
     end
 
-    private_class_method def self.recaptcha_v3_define_default_callback(callback)
+    private_class_method def self.recaptcha_v3_define_default_callback(callback, options)
       <<-HTML
-          var #{callback} = function(id, token) {
-            var element = document.getElementById(id);
-            element.value = token;
-          }
+        var #{callback} = function(id, token) {
+          var element = document.getElementById(id);
+          #{element_check_condition(options)} element.value = token;
+        }
       HTML
     end
 
@@ -251,8 +254,9 @@ module Recaptcha
       recaptcha_v3_inline_script?(options)
     end
 
-    # Returns the name of the JavaScript function that actually executes the reCAPTCHA code (calls
-    # grecaptcha.execute). You can call it again later to reset it.
+    # Returns the name of the JavaScript function that actually executes the
+    # reCAPTCHA code (calls `grecaptcha.execute` or
+    # `grecaptcha.enterprise.execute`). You can call it again later to reset it.
     def self.recaptcha_v3_execute_function_name(action)
       "executeRecaptchaFor#{sanitize_action_for_js(action)}"
     end
@@ -271,6 +275,7 @@ module Recaptcha
     private_class_method def self.default_callback(options = {})
       nonce = options[:nonce]
       nonce_attr = " nonce='#{nonce}'" if nonce
+      selector_attr = options[:id] ? "##{options[:id]}" : ".g-recaptcha"
 
       <<-HTML
         <script#{nonce_attr}>
@@ -283,9 +288,9 @@ module Recaptcha
               return curEle.nodeName === 'FORM' ? curEle : null
             };
 
-            var eles = document.getElementsByClassName('g-recaptcha');
-            if (eles.length > 0) {
-              var form = closestForm(eles[0]);
+            var el = document.querySelector("#{selector_attr}")
+            if (!!el) {
+              var form = closestForm(el);
               if (form) {
                 form.submit();
               }
@@ -293,6 +298,14 @@ module Recaptcha
           };
         </script>
       HTML
+    end
+
+    def self.recaptcha_execute_method_name
+      Recaptcha.configuration.enterprise ? "grecaptcha.enterprise.execute" : "grecaptcha.execute"
+    end
+
+    def self.recaptcha_ready_method_name
+      Recaptcha.configuration.enterprise ? "grecaptcha.enterprise.ready" : "grecaptcha.ready"
     end
 
     private_class_method def self.default_callback_required?(options)
@@ -316,6 +329,10 @@ module Recaptcha
 
     private_class_method def self.hash_to_query(hash)
       hash.delete_if { |_, val| val.nil? || val.empty? }.to_a.map { |pair| pair.join('=') }.join('&')
+    end
+
+    private_class_method def self.element_check_condition(options)
+      options[:ignore_no_element] ? "if (element !== null)" : ""
     end
   end
 end

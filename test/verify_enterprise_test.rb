@@ -1,6 +1,6 @@
 require_relative 'helper'
 
-class TestController
+class EnterpriseTestController
   include Recaptcha::Adapters::ControllerMethods
 
   attr_accessor :request, :params, :flash
@@ -12,14 +12,19 @@ class TestController
   public :verify_recaptcha
   public :verify_recaptcha!
   public :recaptcha_reply
-  public :recaptcha_response_token
 end
 
-describe 'controller helpers' do
+describe 'controller helpers (enterprise)' do
   before do
-    @controller = TestController.new
+    Recaptcha.configuration.enterprise = true
+
+    @controller = EnterpriseTestController.new
     @controller.request = stub(remote_ip: "1.1.1.1", format: :html)
     @controller.params = {:recaptcha_response_field => "response", 'g-recaptcha-response-data' => 'string'}
+  end
+
+  after do
+    Recaptcha.configuration.enterprise = false
   end
 
   describe "#verify_recaptcha!" do
@@ -41,14 +46,14 @@ describe 'controller helpers' do
   describe "#verify_recaptcha" do
     it "returns true on success" do
       @controller.flash[:recaptcha_error] = "previous error that should be cleared"
-      expect_http_post.to_return(body: '{"success":true}')
+      expect_http_post.to_return(body: '{"tokenProperties":{"valid":true}}')
 
       assert @controller.verify_recaptcha
       assert_nil @controller.flash[:recaptcha_error]
     end
 
-    it "raises without secret key" do
-      Recaptcha.configuration.secret_key = nil
+    it "raises without api key" do
+      Recaptcha.configuration.enterprise_api_key = nil
       assert_raises Recaptcha::RecaptchaError do
         @controller.verify_recaptcha
       end
@@ -75,19 +80,15 @@ describe 'controller helpers' do
     it "returns true on success with optional key" do
       key = 'ADIFFERENTPRIVATEKEYXXXXXXXXXXXXXX'
       @controller.flash[:recaptcha_error] = "previous error that should be cleared"
-      expect_http_post(secret_key: key).to_return(body: '{"success":true}')
+      expect_http_post(enterprise_api_key: key).to_return(body: '{"tokenProperties":{"valid":true}}')
 
-      assert @controller.verify_recaptcha(secret_key: key)
+      assert @controller.verify_recaptcha(enterprise_api_key: key)
       assert_nil @controller.flash[:recaptcha_error]
     end
 
     it "returns true on success without remote_ip" do
       @controller.flash[:recaptcha_error] = "previous error that should be cleared"
-      secret_key = Recaptcha.configuration.secret_key
-      stub_request(
-        :get,
-        "https://www.recaptcha.net/recaptcha/api/siteverify?response=string&secret=#{secret_key}"
-      ).to_return(body: '{"success":true}')
+      expect_http_post.to_return(body: '{"tokenProperties":{"valid":true}}')
 
       assert @controller.verify_recaptcha(skip_remote_ip: true)
       assert_nil @controller.flash[:recaptcha_error]
@@ -193,7 +194,7 @@ describe 'controller helpers' do
       let(:hostname) { 'fake.hostname.com' }
 
       before do
-        expect_http_post.to_return(body: %({"success":true, "hostname": "#{hostname}"}))
+        expect_http_post.to_return(body: %({"tokenProperties":{"valid":true,"hostname":"#{hostname}"}}))
       end
 
       it "passes with nil" do
@@ -259,10 +260,17 @@ describe 'controller helpers' do
     end
 
     describe 'action_valid?' do
-      let(:default_response_hash) { {
-        success: true,
-        action: 'homepage',
-      } }
+      let(:default_response_hash) {
+        {
+          tokenProperties: {
+            valid: true,
+            action: 'homepage'
+          },
+          riskAnalysis: {
+            reasons: []
+          }
+        }
+      }
 
       before do
         expect_http_post.to_return(body: success_body)
@@ -280,6 +288,11 @@ describe 'controller helpers' do
         assert_nil @controller.flash[:recaptcha_error]
       end
 
+      it "passes with a symbol that matches" do
+        assert verify_recaptcha(action: :homepage)
+        assert_nil @controller.flash[:recaptcha_error]
+      end
+
       it "passes with nil" do
         assert verify_recaptcha(action: nil)
         assert_nil @controller.flash[:recaptcha_error]
@@ -292,74 +305,98 @@ describe 'controller helpers' do
     end
 
     describe 'score_above_threshold?' do
-      let(:default_response_hash) { {
-        success: true,
-        action: 'homepage',
-      } }
-
-      before do
-        expect_http_post.to_return(body: success_body(score: 0.4))
-      end
+      let(:default_response_hash) {
+        {
+          tokenProperties: {
+            valid: true,
+            action: 'homepage'
+          },
+          riskAnalysis: {
+            reasons: []
+          }
+        }
+      }
 
       it "fails when score is below minimum_score" do
+        expect_http_post.to_return(body: success_body(score: 0.4))
+
         refute verify_recaptcha(minimum_score: 0.5)
         assert_flash_error
       end
 
       it "fails when response doesn't include a score" do
-        expect_http_post.to_return(body: success_body())
+        expect_http_post.to_return(body: success_body)
+
         refute verify_recaptcha(minimum_score: 0.4)
         assert_flash_error
       end
 
       it "passes with score exactly at minimum_score" do
+        expect_http_post.to_return(body: success_body(score: 0.4))
+
         assert verify_recaptcha(minimum_score: 0.4)
         assert_nil @controller.flash[:recaptcha_error]
       end
 
       it "passes when minimum_score not specified or nil" do
+        expect_http_post.to_return(body: success_body(score: 0.4))
+
         assert verify_recaptcha()
         assert_nil @controller.flash[:recaptcha_error]
       end
 
       it "passes with false" do
+        expect_http_post.to_return(body: success_body(score: 0.4))
+
         assert verify_recaptcha(minimum_score: false)
         assert_nil @controller.flash[:recaptcha_error]
       end
     end
 
     describe 'score_below_threshold?' do
-      let(:default_response_hash) { {
-        success: true,
-        action: 'homepage',
-      } }
-
-      before do
-        expect_http_post.to_return(body: success_body(score: 0.8))
-      end
+      let(:default_response_hash) {
+        {
+          tokenProperties: {
+            valid: true,
+            action: 'homepage'
+          },
+          riskAnalysis: {
+            reasons: []
+          }
+        }
+      }
 
       it "fails when score is above maximum_score" do
+        expect_http_post.to_return(body: success_body(score: 0.8))
+
         refute verify_recaptcha(maximum_score: 0.7)
         assert_flash_error
       end
 
       it "fails when response doesn't include a score" do
-        expect_http_post.to_return(body: success_body())
-        refute verify_recaptcha(maximum_score: 0.8)
+        expect_http_post.to_return(body: success_body)
+
+        refute verify_recaptcha(maximum_score: 0.7)
         assert_flash_error
       end
 
       it "passes with score exactly at maximum_score" do
-        assert verify_recaptcha(maximum_score: 0.8)
+        expect_http_post.to_return(body: success_body(score: 0.7))
+
+        assert verify_recaptcha(maximum_score: 0.7)
         assert_nil @controller.flash[:recaptcha_error]
       end
 
       it "passes when maximum_score not specified or nil" do
+        expect_http_post.to_return(body: success_body(score: 0.7))
+
         assert verify_recaptcha()
         assert_nil @controller.flash[:recaptcha_error]
       end
 
       it "passes with false" do
+        expect_http_post.to_return(body: success_body(score: 0.7))
+
         assert verify_recaptcha(maximum_score: false)
         assert_nil @controller.flash[:recaptcha_error]
       end
@@ -367,11 +404,18 @@ describe 'controller helpers' do
   end
 
   describe "#recatcha_reply" do
-    let(:default_response_hash) { {
-      success: true,
-      score: 0.97,
-      action: 'homepage',
-    } }
+    let(:default_response_hash) {
+      {
+        tokenProperties: {
+          valid: true,
+          action: 'homepage'
+        },
+        riskAnalysis: {
+          score: 0.97,
+          reasons: []
+        }
+      }
+    }
 
     before do
       expect_http_post.to_return(body: success_body)
@@ -387,86 +431,23 @@ describe 'controller helpers' do
     end
   end
 
-  describe "#recaptcha_response_token" do
-    it "returns an empty string when params are empty and no action is provided" do
-      @controller.params = {}
-      assert_equal @controller.recaptcha_response_token, ""
-    end
-
-    it "returns an empty string when g-recaptcha-response-data is invalid and no action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => {} }
-      assert_equal @controller.recaptcha_response_token, ""
-    end
-
-    it "returns an empty string when g-recaptcha-response is invalid and no action is provided" do
-      @controller.params = { "g-recaptcha-response" => {} }
-      assert_equal @controller.recaptcha_response_token, ""
-    end
-
-    it "returns the g-recaptcha-response-data when response is valid and no action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => "recaptcha-response-data" }
-      assert_equal @controller.recaptcha_response_token, "recaptcha-response-data"
-    end
-
-    it "returns the g-recaptcha-response  when response is valid and no action is provided" do
-      @controller.params = { "g-recaptcha-response" => "recaptcha-response" }
-      assert_equal @controller.recaptcha_response_token, "recaptcha-response"
-    end
-
-    it "returns an empty string when params are empty and an action is provided" do
-      @controller.params = {}
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns an empty string when g-recaptcha-response-data params are invalid and an action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => ["\n"] }
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns an empty string when g-recaptcha-response-data params are nil and an action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => nil }
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns an empty string when g-recaptcha-response-data params are empty and an action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => {} }
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns an empty string when g-recaptcha-response-data params are valid but an invalid action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => { "test2" => "recaptcha-response-data" } }
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns an empty string when g-recaptcha-response params are valid but an invalid action is provided" do
-      @controller.params = { "g-recaptcha-response" => { "test2" => "recaptcha-response-data" } }
-      assert_equal @controller.recaptcha_response_token("test"), ""
-    end
-
-    it "returns the g-recaptcha-response-data action when params are valid and an action is provided" do
-      @controller.params = { "g-recaptcha-response-data" => { "test" => "recaptcha-response-data" } }
-      assert_equal @controller.recaptcha_response_token("test"), "recaptcha-response-data"
-    end
-
-    it "returns the g-recaptcha-response action when params are valid and an action is provided" do
-      @controller.params = { "g-recaptcha-response" => { "test" => "recaptcha-response" } }
-      assert_equal @controller.recaptcha_response_token("test"), "recaptcha-response"
-    end
-  end
-
   private
 
-  def expect_http_post(secret_key: Recaptcha.configuration.secret_key)
+  def expect_http_post(
+    enterprise_api_key: Recaptcha.configuration.enterprise_api_key,
+    enterprise_project_id: Recaptcha.configuration.enterprise_project_id
+  )
     stub_request(
-      :get,
-      "https://www.recaptcha.net/recaptcha/api/siteverify?remoteip=1.1.1.1&response=string&secret=#{secret_key}"
+      :post,
+      "https://recaptchaenterprise.googleapis.com/v1/projects/#{enterprise_project_id}/assessments?key=#{enterprise_api_key}"
     )
   end
 
-  def success_body(other = {})
-    default_response_hash.
-      merge(other).
-      to_json
+  def success_body(action: nil, score: nil)
+    result = default_response_hash
+    result[:tokenProperties][:action] = action if action
+    result[:riskAnalysis][:score] = score if score
+    result.to_json
   end
 
   def verify_recaptcha(options = {})

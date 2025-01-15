@@ -1,4 +1,71 @@
 ## Next
+* Add key setup to v3 example in README
+* Remove unnecessary id from textarea - This was unused and may cause accessability concerns if there is more than one recaptcha on the page due to multiple elements with the same id
+* Update to latest version of rubocop
+
+## 5.16.0
+* Allow usage of `options[:turbo]` as well as `options[:turbolinks]` for `recaptcha_v3`
+
+## 5.15.0
+* Add 3.2 to the list of Ruby CI versions
+* Add ability to submit verify_recaptcha via POST with JSON Body with `options[:json] = true`
+
+## 5.14.0
+* drop json dependency
+
+## 5.13.1
+* Permit actions as symbol
+
+## 5.13.0
+* Added option to ignore_no_element.
+
+## 5.12.3
+* Remove score fallback for enterprise
+* Update enterprise tests to v1 assessment schema
+
+## 5.12.2
+* Fix minimum score for enterprise
+
+## 5.12.1
+* Fix Japanese locale
+
+## 5.12.0
+* Added Japanese locale
+
+## 5.11.0
+* Added Dutch locale
+
+## 5.10.1
+* Fix enterprise_verify_url #415
+
+## 5.10.0
+* Drop ruby 2.4 2.5 2.6
+* Add maxiumm score support for hcaptcha
+
+## 5.9.0
+* Gracefully handle invalid params
+
+## 5.8.1
+* Allow configuring response limit
+
+## 5.8.0
+* Add support for the enterprise API
+
+## 5.7.0
+* french locale
+* drop ruby 2.3
+
+## 5.6.0
+* Allow multiple invisible recaptchas on a single page by setting custom selector
+
+## 5.5.0
+* add `recaptcha_reply` controller method for better debugging/inspection
+
+## 5.4.1
+* fix v2 vs 'data' postfix
+
+## 5.4.0
+* added 'data' postfix to g-recaptcha-response attribute name to avoid collisions
 
 ## 5.3.0
 * turbolinks support

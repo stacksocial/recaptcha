@@ -90,6 +90,19 @@ describe 'View helpers' do
       html.must_include("onload=executeRecaptchaForRequest")
     end
   end
+  
+  describe "turbo" do
+    it "adds onload to defined function" do
+      html = recaptcha_v3(action: 'request', turbo: true)
+      html.must_include("onload=executeRecaptchaForRequest")
+    end
+
+    it "overrides specified onload" do
+      html = recaptcha_v3(action: 'request', onload: "foobar", turbo: true)
+      html.wont_include("onload=foobar")
+      html.must_include("onload=executeRecaptchaForRequest")
+    end
+  end
 
   it "adds :render option to the url" do
     html = recaptcha_tags(render: 'onload')
@@ -209,6 +222,17 @@ describe 'View helpers' do
       html.wont_include("<button")
     end
 
+    it "includes a custom selector if provided" do
+      html = invisible_recaptcha_tags(id: 'custom-selector')
+      html.must_include("id=\"custom-selector\"")
+      html.must_include("document.querySelector(\"#custom-selector\")")
+    end
+
+    it "uses default selector if no custom selector has been provided" do
+      html = invisible_recaptcha_tags
+      html.must_include("document.querySelector(\".g-recaptcha\")")
+    end
+
     it "raises an error on an invalid ui option" do
       assert_raises Recaptcha::RecaptchaError do
         invisible_recaptcha_tags(ui: :foo)
@@ -219,12 +243,27 @@ describe 'View helpers' do
   describe "v3 recaptcha" do
     it "renders input" do
       html = recaptcha_v3 action: :foo
-      html.must_include('<input type="hidden" name="g-recaptcha-response[foo]" id="g-recaptcha-response-foo" data-sitekey="0000000000000000000000000000000000000000" class="g-recaptcha g-recaptcha-response "/>')
+      html.must_include('<input type="hidden" name="g-recaptcha-response-data[foo]" id="g-recaptcha-response-data-foo" data-sitekey="0000000000000000000000000000000000000000" class="g-recaptcha g-recaptcha-response "/>')
     end
 
     it "does not have obsole closing script tag" do
       html = recaptcha_v3 action: :foo
       assert html.scan(/script/).length.even?
+    end
+
+    it "outputs element checking when ignore_no_element is not set" do
+      output = recaptcha_v3(action: 'foo')
+      assert_includes output, 'if (element !== null)'
+    end
+
+    it 'outputs element checking for null when ignore_no_element is true' do
+      output = recaptcha_v3(action: 'foo', ignore_no_element: true)
+      assert_includes output, 'if (element !== null)'
+    end
+
+    it 'does not output element checking for null when ignore_no_element is false' do
+      output = recaptcha_v3(action: 'foo', ignore_no_element: false)
+      refute_includes output, 'if (element !== null)'
     end
   end
 end
